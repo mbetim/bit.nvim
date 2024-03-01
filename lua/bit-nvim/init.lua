@@ -33,7 +33,7 @@ M._get_current_repo = function()
 	if workspace and repo then
 		return { workspace = workspace, repo = repo }
 	else
-		print("Failed to get current repo")
+		print_error("Failed to get current repo")
 		return nil
 	end
 end
@@ -125,13 +125,13 @@ M.list_prs = function(opts)
 
 	local token = configs.token
 
-	print_warn("Fetching PRs from Bitbucket...")
-
 	local result = M._get_current_repo()
 
 	if not result then
 		return nil
 	end
+
+	print_warn("Fetching PRs from Bitbucket...")
 
 	M._fetch_prs(result.workspace, result.repo, token, function(prs)
 		if not prs then
