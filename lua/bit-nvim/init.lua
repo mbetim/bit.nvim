@@ -10,11 +10,15 @@ local M = {}
 
 local cwd = vim.loop.cwd()
 
+local function print_warn(message)
+	vim.api.nvim_echo({ { message, "WarningMsg" } }, false, {})
+end
+
 local function print_error(message)
 	vim.api.nvim_err_writeln(message)
 end
 
-local function get_current_repo()
+M._get_current_repo = function()
 	local result = Job:new({
 		command = "git",
 		args = { "config", "--get", "remote.origin.url" },
@@ -34,8 +38,8 @@ local function get_current_repo()
 	end
 end
 
-local function fetch_prs(workspace, repo, token)
-	local result = Job:new({
+M._fetch_prs = function(workspace, repo, token, callback)
+	Job:new({
 		command = "curl",
 		args = {
 			"-s",
@@ -44,41 +48,49 @@ local function fetch_prs(workspace, repo, token)
 			string.format("https://api.bitbucket.org/2.0/repositories/%s/%s/pullrequests", workspace, repo),
 		},
 		cwd = cwd,
-	}):sync()
+		on_exit = function(j)
+			local result = j:result()
+			result = table.concat(result, "")
 
-	result = table.concat(result, "")
+			vim.schedule(function()
+				local ok, data = pcall(vim.fn.json_decode, result)
 
-	local ok, data = pcall(vim.fn.json_decode, result)
+				if not ok or not data then
+					print_error("Bitbucket response: " .. data)
+					return callback(nil)
+				end
 
-	if not ok or not data then
-		print_error("Bitbucket response: " .. result)
-		return nil
-	end
+				if data and data.error and data.error.message then
+					print_error(data.error.message)
+					return callback(nil)
+				end
 
-	if data and data.error and data.error.message then
-		print_error(data.error.message)
-		return nil
-	end
+				local prs = {}
+				for _, pr in ipairs(data.values) do
+					table.insert(prs, {
+						title = pr.title,
+						branch = pr.source.branch.name,
+						id = pr.id,
+					})
+				end
 
-	local prs = {}
-	for _, pr in ipairs(data.values) do
-		table.insert(prs, {
-			title = pr.title,
-			branch = pr.source.branch.name,
-			id = pr.id,
-		})
-	end
-
-	return prs
+				return callback(prs)
+			end)
+		end,
+	}):start()
 end
 
 local function checkout_pr(branch)
-	Job:new({ command = "git", args = { "fetch" }, cwd = cwd }):sync()
+	print_warn("Checking out PR...")
 
-	local checkout_result = Job:new({ command = "git", args = { "checkout", branch }, cwd = cwd }):sync()
-	local pull_result = Job:new({ command = "git", args = { "pull" }, cwd = cwd }):sync()
-
-	print(table.concat(checkout_result, "") .. "\n" .. table.concat(pull_result, ""))
+	Job:new({
+		command = "bash",
+		args = { "-c", string.format("git fetch && git checkout %s && git pull", branch) },
+		cwd = cwd,
+		on_exit = function(j)
+			print(table.concat(j:result(), ""))
+		end,
+	}):start()
 end
 
 M.setup = function()
@@ -91,7 +103,7 @@ M.setup = function()
 	local token = vim.fn.inputsecret("Bitbucket token: ")
 
 	if vim.trim(token) == "" then
-		print("A token is required")
+		print_error("A token is required")
 		return nil
 	end
 
@@ -113,47 +125,47 @@ M.list_prs = function(opts)
 
 	local token = configs.token
 
-	vim.api.nvim_echo({ { "Fetching PRs...", "WarningMsg" } }, false, {})
+	print_warn("Fetching PRs from Bitbucket...")
 
-	local result = get_current_repo()
+	local result = M._get_current_repo()
 
 	if not result then
 		return nil
 	end
 
-	local prs = fetch_prs(result.workspace, result.repo, token)
+	M._fetch_prs(result.workspace, result.repo, token, function(prs)
+		if not prs then
+			return nil
+		end
 
-	if not prs then
-		return nil
-	end
+		opts = opts or {}
 
-	opts = opts or {}
+		pickers
+			.new(opts, {
+				prompt_title = "Bitbucket PRs",
+				finder = finders.new_table({
+					results = prs,
+					entry_maker = function(entry)
+						return {
+							value = entry,
+							display = entry.title,
+							ordinal = entry.title,
+						}
+					end,
+				}),
+				sorter = conf.generic_sorter(prs),
+				attach_mappings = function(prompt_bufnr)
+					actions.select_default:replace(function()
+						actions.close(prompt_bufnr)
 
-	pickers
-		.new(opts, {
-			prompt_title = "Bitbucket PRs",
-			finder = finders.new_table({
-				results = prs,
-				entry_maker = function(entry)
-					return {
-						value = entry,
-						display = entry.title,
-						ordinal = entry.title,
-					}
+						local selection = action_state.get_selected_entry()
+						checkout_pr(selection.value.branch)
+					end)
+					return true
 				end,
-			}),
-			sorter = conf.generic_sorter(prs),
-			attach_mappings = function(prompt_bufnr)
-				actions.select_default:replace(function()
-					actions.close(prompt_bufnr)
-
-					local selection = action_state.get_selected_entry()
-					checkout_pr(selection.value.branch)
-				end)
-				return true
-			end,
-		})
-		:find()
+			})
+			:find()
+	end)
 end
 
 return M
