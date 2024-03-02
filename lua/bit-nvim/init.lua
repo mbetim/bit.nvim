@@ -3,6 +3,7 @@ local finders = require("telescope.finders")
 local actions = require("telescope.actions")
 local action_state = require("telescope.actions.state")
 local conf = require("telescope.config").values
+local entry_display = require("telescope.pickers.entry_display")
 local Job = require("plenary.job")
 local config = require("bit-nvim.config")
 
@@ -152,8 +153,23 @@ M.list_prs = function(opts)
 
 		opts = opts or {}
 
+		local displayer = entry_display.create({
+			separator = " ",
+			items = {
+				{ width = 4 },
+				{ width = 50 },
+				{ remaining = true },
+			},
+		})
+
 		local make_display = function(entry)
-			return string.format("[%s] %s (%s)", entry.id, entry.title, entry.author.name)
+			local pr = entry.value
+
+			return displayer({
+				{ string.format("[%s]", pr.id) },
+				{ pr.title },
+				{ pr.author.name },
+			})
 		end
 
 		pickers
@@ -164,8 +180,8 @@ M.list_prs = function(opts)
 					entry_maker = function(entry)
 						return {
 							value = entry,
-							display = make_display(entry),
-							ordinal = make_display(entry),
+							display = make_display,
+							ordinal = table.concat({ entry.id, entry.title, entry.author.name }, " "),
 						}
 					end,
 				}),
