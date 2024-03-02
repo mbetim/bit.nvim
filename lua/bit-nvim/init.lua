@@ -72,6 +72,9 @@ M._fetch_prs = function(workspace, repo, token, callback)
 						title = pr.title,
 						branch = pr.source.branch.name,
 						url = pr.links.html.href,
+						author = {
+							name = pr.author.nickname,
+						},
 					})
 				end
 
@@ -149,6 +152,10 @@ M.list_prs = function(opts)
 
 		opts = opts or {}
 
+		local make_display = function(entry)
+			return string.format("[%s] %s (%s)", entry.id, entry.title, entry.author.name)
+		end
+
 		pickers
 			.new(opts, {
 				prompt_title = "Bitbucket PRs",
@@ -157,8 +164,8 @@ M.list_prs = function(opts)
 					entry_maker = function(entry)
 						return {
 							value = entry,
-							display = entry.title,
-							ordinal = entry.title,
+							display = make_display(entry),
+							ordinal = make_display(entry),
 						}
 					end,
 				}),
