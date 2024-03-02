@@ -68,9 +68,10 @@ M._fetch_prs = function(workspace, repo, token, callback)
 				local prs = {}
 				for _, pr in ipairs(data.values) do
 					table.insert(prs, {
+						id = pr.id,
 						title = pr.title,
 						branch = pr.source.branch.name,
-						id = pr.id,
+						url = pr.links.html.href,
 					})
 				end
 
@@ -115,6 +116,14 @@ M.setup = function()
 	end
 end
 
+M._open_on_browser = function(url)
+	Job:new({
+		command = "open",
+		args = { url },
+		cwd = cwd,
+	}):start()
+end
+
 M.list_prs = function(opts)
 	local configs = config.load_configs()
 
@@ -154,13 +163,22 @@ M.list_prs = function(opts)
 					end,
 				}),
 				sorter = conf.generic_sorter(prs),
-				attach_mappings = function(prompt_bufnr)
+				attach_mappings = function(prompt_bufnr, map)
 					actions.select_default:replace(function()
 						actions.close(prompt_bufnr)
 
 						local selection = action_state.get_selected_entry()
 						checkout_pr(selection.value.branch)
 					end)
+
+					local open_pr_on_brownser = function()
+						local selection = action_state.get_selected_entry()
+						M._open_on_browser(selection.value.url)
+					end
+
+					map("i", "<C-o>", open_pr_on_brownser)
+					map("n", "<C-o>", open_pr_on_brownser)
+
 					return true
 				end,
 			})
