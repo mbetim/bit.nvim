@@ -6,38 +6,12 @@ local conf = require("telescope.config").values
 local entry_display = require("telescope.pickers.entry_display")
 local Job = require("plenary.job")
 local config = require("bit-nvim.config")
+local git = require("bit-nvim.git")
+local utils = require("bit-nvim.utils")
 
 local M = {}
 
 local cwd = vim.loop.cwd()
-
-local function print_warn(message)
-	vim.api.nvim_echo({ { message, "WarningMsg" } }, false, {})
-end
-
-local function print_error(message)
-	vim.api.nvim_err_writeln(message)
-end
-
-M._get_current_repo = function()
-	local result = Job:new({
-		command = "git",
-		args = { "config", "--get", "remote.origin.url" },
-		cwd = cwd,
-	}):sync()
-
-	result = table.concat(result, "")
-	result = string.gsub(result, "\n$", "")
-
-	local workspace, repo = string.match(result, "bitbucket.org[:/](.-)/(.-).git")
-
-	if workspace and repo then
-		return { workspace = workspace, repo = repo }
-	else
-		print_error("Failed to get current repo")
-		return nil
-	end
-end
 
 M._fetch_prs = function(workspace, repo, token, callback)
 	Job:new({
@@ -57,12 +31,12 @@ M._fetch_prs = function(workspace, repo, token, callback)
 				local ok, data = pcall(vim.fn.json_decode, result)
 
 				if not ok or not data then
-					print_error("Bitbucket response: " .. data)
+					utils.print_error("Bitbucket response: " .. data)
 					return callback(nil)
 				end
 
 				if data and data.error and data.error.message then
-					print_error(data.error.message)
+					utils.print_error(data.error.message)
 					return callback(nil)
 				end
 
@@ -85,19 +59,6 @@ M._fetch_prs = function(workspace, repo, token, callback)
 	}):start()
 end
 
-local function checkout_pr(branch)
-	print_warn("Checking out PR...")
-
-	Job:new({
-		command = "bash",
-		args = { "-c", string.format("git fetch && git checkout %s && git pull", branch) },
-		cwd = cwd,
-		on_exit = function(j)
-			print(table.concat(j:result(), ""))
-		end,
-	}):start()
-end
-
 M.setup = function()
 	local configs, _ = config.load_configs()
 
@@ -108,7 +69,7 @@ M.setup = function()
 	local token = vim.fn.inputsecret("Bitbucket token: ")
 
 	if vim.trim(token) == "" then
-		print_error("A token is required")
+		utils.print_error("A token is required")
 		return nil
 	end
 
@@ -118,14 +79,6 @@ M.setup = function()
 	if not err then
 		print("Token saved")
 	end
-end
-
-M._open_on_browser = function(url)
-	Job:new({
-		command = "open",
-		args = { url },
-		cwd = cwd,
-	}):start()
 end
 
 M.list_prs = function(opts)
@@ -138,13 +91,13 @@ M.list_prs = function(opts)
 
 	local token = configs.token
 
-	local result = M._get_current_repo()
+	local result = git.get_current_repo(cwd)
 
 	if not result then
 		return nil
 	end
 
-	print_warn("Fetching PRs from Bitbucket...")
+	utils.print_warn("Fetching PRs from Bitbucket...")
 
 	M._fetch_prs(result.workspace, result.repo, token, function(prs)
 		if not prs then
@@ -191,12 +144,12 @@ M.list_prs = function(opts)
 						actions.close(prompt_bufnr)
 
 						local selection = action_state.get_selected_entry()
-						checkout_pr(selection.value.branch)
+						git.checkout_pr(cwd, selection.value.branch)
 					end)
 
 					local open_pr_on_brownser = function()
 						local selection = action_state.get_selected_entry()
-						M._open_on_browser(selection.value.url)
+						utils._open_on_browser(selection.value.url)
 					end
 
 					map("i", "<C-o>", open_pr_on_brownser)
