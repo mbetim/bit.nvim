@@ -45,7 +45,7 @@ M._fetch_prs = function(workspace, repo, token, callback)
 					table.insert(prs, {
 						id = pr.id,
 						title = pr.title,
-						branch = pr.source.branch.name,
+						source_branch = pr.source.branch.name,
 						url = pr.links.html.href,
 						author = {
 							name = pr.author.nickname,
@@ -144,7 +144,7 @@ M.list_prs = function(opts)
 						actions.close(prompt_bufnr)
 
 						local selection = action_state.get_selected_entry()
-						git.checkout_pr(cwd, selection.value.branch)
+						git.checkout_pr(cwd, selection.value.source_branch)
 					end)
 
 					local open_pr_on_brownser = function()
