@@ -4,6 +4,7 @@ local actions = require("telescope.actions")
 local action_state = require("telescope.actions.state")
 local conf = require("telescope.config").values
 local entry_display = require("telescope.pickers.entry_display")
+local previewers = require("telescope.previewers")
 local Job = require("plenary.job")
 local config = require("bit-nvim.config")
 local git = require("bit-nvim.git")
@@ -46,10 +47,13 @@ M._fetch_prs = function(workspace, repo, token, callback)
 						id = pr.id,
 						title = pr.title,
 						source_branch = pr.source.branch.name,
+						destination_branch = pr.destination.branch.name,
 						url = pr.links.html.href,
+						comments_count = pr.comment_count,
 						author = {
 							name = pr.author.nickname,
 						},
+						description = pr.summary.raw,
 					})
 				end
 
@@ -79,6 +83,47 @@ M.setup = function()
 	if not err then
 		print("Token saved")
 	end
+end
+
+local custom_previewer = function()
+	return previewers.new_buffer_previewer({
+		define_preview = function(self, entry, status)
+			vim.api.nvim_buf_set_option(self.state.bufnr, "filetype", "markdown")
+
+			local lines = {
+				"# Title: " .. entry.value.title,
+				"",
+				string.format("[%s]   [%s]", entry.value.source_branch, entry.value.destination_branch),
+				"",
+				"**Author:** " .. entry.value.author.name,
+				"**Comments count:** " .. entry.value.comments_count,
+				"",
+				"## Description",
+				"",
+			}
+
+			local mark_glyph = " "
+			local description = string.gsub(entry.value.description, ":white\\_check\\_mark:", mark_glyph)
+			description = string.gsub(description, ":white_check_mark:", mark_glyph)
+			description = string.gsub(description, ":warning:", " ")
+
+			local previous_line = ""
+			for str in string.gmatch(description, "([^\n]*)") do
+				str = string.gsub(str, "\u{200C}", "")
+
+				if previous_line == "" and str == "" then
+					goto continue
+				end
+
+				table.insert(lines, str)
+
+				::continue::
+				previous_line = str
+			end
+
+			vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
+		end,
+	})
 end
 
 M.list_prs = function(opts)
@@ -138,6 +183,7 @@ M.list_prs = function(opts)
 						}
 					end,
 				}),
+				previewer = custom_previewer(),
 				sorter = conf.generic_sorter(prs),
 				attach_mappings = function(prompt_bufnr, map)
 					actions.select_default:replace(function()
