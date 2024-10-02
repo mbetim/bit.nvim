@@ -154,7 +154,7 @@ M.list_prs = function(opts)
 		local displayer = entry_display.create({
 			separator = " ",
 			items = {
-				{ width = 4 },
+				{ width = 5 },
 				{ width = 50 },
 				{ remaining = true },
 			},
@@ -164,7 +164,7 @@ M.list_prs = function(opts)
 			local pr = entry.value
 
 			return displayer({
-				{ string.format("[%s]", pr.id) },
+				{ string.format("#%s", pr.id) },
 				{ pr.title },
 				{ pr.author.name },
 			})
